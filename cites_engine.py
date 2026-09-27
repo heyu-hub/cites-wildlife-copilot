@@ -11,7 +11,7 @@ import os
 from typing import List, Literal
 
 import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 MODEL_ID = "claude-opus-5"
 
@@ -62,12 +62,44 @@ itself rather than inventing false precision.
 """
 
 
+def _normalize_confidence(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    v = value.strip().lower()
+    if v.startswith("high"):
+        return "high"
+    if v.startswith("low"):
+        return "low"
+    return "medium"
+
+
+def _normalize_appendix(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    v = value.strip().lower()
+    # Claude occasionally adds trailing notes, e.g. "II (with reservations)"
+    if v.startswith("not listed") or v.startswith("none"):
+        return "Not listed"
+    if v.startswith("iii"):
+        return "III"
+    if v.startswith("ii"):
+        return "II"
+    if v.startswith("i"):
+        return "I"
+    return "Uncertain"
+
+
 class SpeciesIdentification(BaseModel):
     user_mentioned: str = Field(description="The species/animal exactly as the user described it")
     likely_common_name: str = Field(description="Best-guess specific common name, e.g. 'Red-eared slider turtle'")
     likely_scientific_name: str = Field(description="Best-guess scientific (Latin) name")
     confidence: Literal["high", "medium", "low"] = Field(description="Confidence in this species identification")
     note: str = Field(description="One sentence on ambiguity, e.g. other likely species this could be")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _coerce_confidence(cls, v):
+        return _normalize_confidence(v)
 
 
 class CitesAssessment(BaseModel):
@@ -79,6 +111,19 @@ class CitesAssessment(BaseModel):
     required_permits: List[str] = Field(description="Concrete permits/documents to check for")
     risk_warnings: List[str] = Field(description="Concrete risks and traps to be aware of")
     sources: List[str] = Field(description="Where to verify this, e.g. official CITES/Species+ links")
+
+    @field_validator("cites_appendix", mode="before")
+    @classmethod
+    def _coerce_appendix(cls, v):
+        return _normalize_appendix(v)
+
+    @field_validator("required_permits", "risk_warnings", "sources", mode="before")
+    @classmethod
+    def _coerce_to_list(cls, v):
+        # Claude occasionally collapses a bulleted list into one string
+        if isinstance(v, str):
+            return [v]
+        return v
 
 
 def get_client() -> anthropic.Anthropic:

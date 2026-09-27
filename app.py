@@ -74,6 +74,12 @@ if submitted:
             except anthropic.APIStatusError as e:
                 st.error(f"API错误 / API error: {e.message}")
                 st.stop()
+            except Exception:
+                st.error(
+                    "AI返回的内容格式不符合预期，请换个问法或稍后重试 / "
+                    "Claude's response didn't match the expected format - try rephrasing or retry."
+                )
+                st.stop()
 
         st.divider()
         st.subheader("📝 结论 / Bottom line")
